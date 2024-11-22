@@ -9,6 +9,7 @@ import cv2
 import os
 import json
 import numpy as np
+import random
 
 class MctClient(object):
     def __init__(self) -> None:
@@ -49,6 +50,8 @@ class MctClient(object):
     def recv_metadata(self):
         response = self.client.recv_multipart()
         str = response[0].decode('utf-8')
+        if str == "None":
+            return None, None
         data = json.loads(str)
         image_bytes_list = response[1:]
         images = []
@@ -68,22 +71,34 @@ def main():
     p = 'p1'
     list_file = os.listdir(os.path.join(TEST_DIR, p))
     list_people_images = [os.path.join(TEST_DIR, p, f) for f in list_file]
-    for file_path in list_people_images:
-        try:
-            print ("Sending request ", file_path,"...")
-            # message = client.send_str(f'Request {file_path} from client')
-            # print ("Received reply ", "[", message, "]")
-            img = cv2.imread(file_path)
-            client.send_image(img)
-            # response = client.wait_respone_str()
-            
-            data, images = client.recv_metadata()
-            print(data)
-            print(len(images))
 
-        except Exception as e:
-            raise
-        except zmq.Again:
-            print("Receive operation timed out!")
+    img = cv2.imread(list_people_images[random.randrange(0, len(list_people_images))])
+    client.send_image(img)
+    # response = client.wait_respone_str()
+    data, images = client.recv_metadata()
+    if data:
+        print(data)
+        print(len(images))
+    else:
+        print("Not found")
+
+    # for file_path in list_people_images:
+    #     try:
+    #         print ("Sending request ", file_path,"...")
+    #         # message = client.send_str(f'Request {file_path} from client')
+    #         # print ("Received reply ", "[", message, "]")
+    #         img = cv2.imread(file_path)
+    #         client.send_image(img)
+    #         # response = client.wait_respone_str()
+            
+    #         data, images = client.recv_metadata()
+    #         if()
+    #         print(data)
+    #         print(len(images))
+    #         break
+    #     except Exception as e:
+    #         raise
+    #     except zmq.Again:
+    #         print("Receive operation timed out!")
 if __name__ == "__main__":
     main()

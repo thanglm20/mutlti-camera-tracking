@@ -1,4 +1,5 @@
 import numpy as np
+import json
 from scipy.optimize import linear_sum_assignment
 import lap #linear assignment problem solver
 from utils.config import Config
@@ -15,15 +16,17 @@ class MCT(object):
         self.id_map = dict()
         '''
         id: 
+            camid,
             {
-                "camid": camid,
-                "gid": global_id,
+                "local_id": id
                 "features": [feature,...],
                 "bbox": bbox,
+                "image": image
+                "tracks":
             }
         '''
         
-    def make_new_global_id(self, camid, bbox, feature):
+    def make_new_global_id(self, camid, bbox, feature, image):
         self.global_id += 1
         return {
             "camid": camid,
@@ -122,3 +125,26 @@ class MCT(object):
                 out_bboxes.append(new_person["bbox"])
                 tracks.append(new_person["tracks"][camid])
         return ids, out_bboxes, tracks
+    
+    def search(self, feature):
+        if self.id_map is None:
+            return None
+        clusters = []
+        distances = []
+        for gid , item in self.id_map.items():
+            distance = []
+            for f in item["features"]:
+                # distances.append(np.linalg.norm(f - features[i]))
+                distance.append(compute_euclidean_distance(f, feature))
+            distances.append((gid, np.mean(distance)))
+        if len(distances) == 0:
+            return None
+        sorted_distacne = sorted(distances, key=lambda x: x[1])
+        print(sorted_distacne)
+        top1 = {}
+        top1_id = sorted_distacne[0][0]
+        top1['id'] = top1_id
+        top1['camera'] = self.id_map[top1_id]["camid"]
+        top1['distance'] = int(sorted_distacne[0][1])
+        return json.dumps(top1)
+        

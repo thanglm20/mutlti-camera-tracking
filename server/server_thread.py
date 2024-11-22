@@ -1,5 +1,6 @@
 from threading import Thread, Lock, Event ,Condition
 import time
+import json
 import numpy as np
 import cv2
 from utils.logger import Logger
@@ -8,9 +9,12 @@ from utils.config import Config
 import sys
 import socket
 import zmq
+from tracking.feature_extractor import FeatureExtractor
+
 
 class ServerTask(Thread):
-    def __init__(self):
+    def __init__(self, mct):
+        self.mct = mct
         self.stopped = False
         self.stop_event = Event()
         self.processing = False
@@ -18,6 +22,7 @@ class ServerTask(Thread):
         self.port = 5000
         self.context = None
         self.server = None
+        self.cfg = Config.get_instance()
 
     def stop(self,  by_SIGINT=False):
         if self.server is not None:
@@ -31,8 +36,15 @@ class ServerTask(Thread):
         """
         self.context = zmq.Context()
         self.server = self.context.socket(zmq.REP)
-        self.server.bind("tcp://*:%s" % self.port)
+        host = f"tcp://*:{ self.port}"
+        self.server.bind(host)
+        logger.info(f"Started server at: {host}")
 
+        self.reid_gpu = self.cfg.reid.getboolean("gpu", True)
+        self.reid_model = self.cfg.reid.getstr("reid_model", "./models/reid.onnx")
+        device = 'cuda' if self.reid_gpu else 'cpu'
+        self.extractor = FeatureExtractor(self.reid_model, device, 0)
+        
         if self.stopped:
             return
         # Start looping
@@ -42,15 +54,22 @@ class ServerTask(Thread):
                 image = None
                 image = self.recv_image()
                 if image is not None:
-                    cv2.imshow("Received Image", image)
-                    cv2.waitKey(1)
-                    # while not self.stop_event.is_set():
-                    time.sleep(0.05)
+                    # cv2.imshow("Received Image", image)
+                    # cv2.waitKey(1)
+                    # # while not self.stop_event.is_set():
+                    # time.sleep(0.05)
                     # self.send_str(f'Received image with shape: {image.shape}')
                     # time.sleep(0.01)
                     # self.send_image(image)
-                    json_string = '{"top1": 1, "top2": 2, "top3": 3}'
-                    self.send_metadata(json_string, [image,image, image])
+                    feature = self.extractor.extract(image)
+                    json_data = self.mct.search(feature)
+                    if json_data is not None:
+                        json_string = json.dumps(json_data)
+                        print("searching result: ", json_string)
+                        self.send_metadata(json_string, [image])
+                    else:
+                        json_string = "None"
+                        self.send_metadata(json_string, [image])
             # except Exception as err:
             #     logger.error(f"Server has an error: {err}")  
             #     self.processing = False

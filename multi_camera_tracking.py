@@ -28,8 +28,7 @@ server= None
 def signal_handler(sig, frame):
     logger.info("Ctrl + C pressed. Cleaning up and exiting...")
     stopped = True
-    if server is not None:
-        server.stop()
+    
     while processing:
         print("waiiting....")
         time.sleep(1)
@@ -41,6 +40,7 @@ def signal_handler(sig, frame):
             list_cameras[cam].join(timeout=1)  # Wait for 2 seconds
     list_cameras.clear()
     cv2.destroyAllWindows()
+    server.stop()
     logger.info("Stopped all threads")
     exit(0)  # Exit the program
 
@@ -105,8 +105,9 @@ def main():
     mct = MCT()
 
     # start server
-    server = ServerTask()
-    ServerTask.start()
+    global server
+    server = ServerTask(mct=mct)
+    server.start()
 
     for id, src in enumerate(sources):
         list_frame_manager[id] = FramedataManager()
