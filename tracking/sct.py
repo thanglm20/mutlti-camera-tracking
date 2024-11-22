@@ -55,18 +55,20 @@ class SCTThread(Thread):
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)  # warning: may return 0 or nan
+
         device = 'cuda' if self.yolo_gpu else 'cpu'
         self.detector = YOLOv9(model_path=f"{self.yolo_model}",
                         class_mapping_path=self.yolo_labels,
                         original_size=(w, h),
                         device=device)
-        time.sleep(2)
+        time.sleep(3)
         sort_max_age = 5 
         sort_min_hits = 2
         sort_iou_thresh = 0.2
         self.tracker = SortTracker(max_age=sort_max_age,min_hits=sort_min_hits,iou_threshold=sort_iou_thresh)
         device = 'cuda' if self.reid_gpu else 'cpu'
         self.extractor = FeatureExtractor(self.reid_model, device, 0)
+
         if self.stopped:
             return
         # Start looping
@@ -75,6 +77,7 @@ class SCTThread(Thread):
                 self.processing = True
                 ret, frame = cap.read()
                 if not ret:
+                    self.processing = False
                     continue 
                 self.frameid += 1
                 frame_data = FrameData(self.camid, self.frameid, frame)
@@ -86,9 +89,9 @@ class SCTThread(Thread):
                                 np.array([x1, y1, x2, y2, conf, detclass])))
                 # self.detector.draw_detections(frame_data.vis_image, detections=detections)
                 tracked_dets = self.tracker.update(dets_to_sort)
-                tracks = self.tracker.getTrackers()
+                # tracks = self.tracker.getTrackers()
                 # self.tracker.draw_tracks(frame_data.vis_image, tracks)
-                # self.tracker.draw_track_dets(frame_data.vis_image, tracked_dets)
+                self.tracker.draw_track_dets(frame_data.vis_image, tracked_dets)
                 if len(tracked_dets) > 0:
                     boxes = tracked_dets[:,:4]
                     identities = tracked_dets[:, 8]
@@ -117,3 +120,6 @@ class SCTThread(Thread):
             #     self.stop(by_SIGINT=True)
 
         logger.info(f"Camera [{str(self.camid)}] is stopped")
+
+
+        

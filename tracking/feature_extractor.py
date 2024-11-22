@@ -49,28 +49,30 @@ class FeatureExtractor:
 
     def _tranform(self):
         val_transforms = T.Compose([
-            T.Resize((self.input_height, self.input_width)),
+            T.Resize((self.input_height, self.input_width), interpolation=3),
             T.ToTensor(),
-            T.Normalize(mean=[0.5*255, 0.5*255, 0.*255], std=[0.5*255, 0.5*255, 0.5*255])
+            # T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
+
         return val_transforms
     
-    def preprocess(self, opencv_image, image_height, image_width):
-        image = opencv_image[:, :, ::-1] # convert to RGB
+    def preprocess_tran_reid(self, opencv_image, image_height, image_width):
+        image = cv2.cvtColor(opencv_image, cv2.COLOR_BGR2RGB) # convert to RGB
         image = Image.fromarray(image.astype(np.uint8))
         img = self.tranform(image)
         img  = img.unsqueeze(0)
         return img.numpy()
     
-    def preprocess1(self, opencv_image, image_height, image_width):
+    def preprocess_agw(self, opencv_image, image_height, image_width):
         # the model expects RGB inputs
         image = cv2.cvtColor(opencv_image, cv2.COLOR_BGR2RGB)
         # Apply pre-processing to image.
         img = cv2.resize(image, (image_width, image_height), interpolation=cv2.INTER_CUBIC)
-        mean = [0.485*255, 0.456*255, 0.406*255]
-        # Values to be used for image normalization
-        std = [0.229*255, 0.224*255, 0.225*255]
-        img = (img.astype("float32") - mean)/std
+        # mean = [127.5,127.5,127.5]
+        # # Values to be used for image normalization
+        # std = [127.5,127.5,127.5]
+        # img = (img.astype("float32") - mean)/std
         img = img.astype("float32").transpose(2, 0, 1)[np.newaxis]  # (1, 3, h, w)
         return img
     
@@ -87,11 +89,12 @@ class FeatureExtractor:
         return nparray / (norm + np.finfo(np.float32).eps)
     
     def extract(self, image, normalize = True):
-        image = self.preprocess1(image, self.input_height, self.input_width)
+        image = self.preprocess_tran_reid(image, self.input_height, self.input_width)
         feat = self.ort_sess.run(None, {self.input_name: image})[0]
-        if normalize:
-            feat = self.normalize(feat, axis=1)
+        # if normalize:
+        #     feat = self.normalize(feat, axis=1)
         return feat
+    # find non-increasing
     
     # def extract(self, img):
     #     image = self._preprocessing_img(img)

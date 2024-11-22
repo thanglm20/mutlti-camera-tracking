@@ -5,25 +5,31 @@ import time
 import signal
 from pathlib import Path
 import os
+import math
 from tracking.detector import YOLOv9
 from utils.logger import Logger
+from utils.config import Config
+import datetime
 from tracking.sct import SCTThread
 from tracking.frame_manager import FramedataManager
 from tracking.mct import MCT
+from server.server_thread import ServerTask
 logger = Logger()
+cfg = Config()
 
-OUTPUT_DIR = "./outputs"
 stopped = False
 processing = False
 list_cameras = dict()
 list_frame_manager = dict()
 global_id = 0
-threshold = 1.0
+server= None
 
 # Define the signal handler function
 def signal_handler(sig, frame):
     logger.info("Ctrl + C pressed. Cleaning up and exiting...")
     stopped = True
+    if server is not None:
+        server.stop()
     while processing:
         print("waiiting....")
         time.sleep(1)
@@ -31,7 +37,8 @@ def signal_handler(sig, frame):
     list_frame_manager.clear()
     for cam in list_cameras:
         list_cameras[cam].stop(by_SIGINT=True)
-        list_cameras[cam].join(timeout=1)  # Wait for 2 seconds
+        if list_cameras[cam].is_alive():
+            list_cameras[cam].join(timeout=1)  # Wait for 2 seconds
     list_cameras.clear()
     cv2.destroyAllWindows()
     logger.info("Stopped all threads")
@@ -49,6 +56,8 @@ def remove_oldest_file(dir, ext, rotate_size=5):
         oldest_file.unlink()  # Deletes the file
 
 def save_person_image(output_dir, camid, frameid, pid, image, rotate_size=5):
+    if image.size == 0:
+        return
     dir = os.path.join(output_dir, f'cam{camid}',f'p{pid}')
     os.makedirs(dir, exist_ok=True)
     remove_oldest_file(dir, '*.jpg',rotate_size)
@@ -61,21 +70,20 @@ def draw_boxes(frame, ids, bboxes, color_list):
         # x1, y1, x2, y2 = bbox
         color = color_list[id]
         label = f'ID:{id}'
-        (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+        (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2.0, 2)
         cv2.rectangle(frame, (x1, y1), (x2, y2), color,1)
-        cv2.rectangle(frame, (x1, y1), (x1 + w, y1 + 10), color, -1)
-        cv2.putText(frame, label, (x1, y1+10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, [255, 255, 255], 1)
+        cv2.rectangle(frame, (x1, y1), (x2, y1 + h), color, -1)
+        cv2.putText(frame, label, (x1, y1+h), cv2.FONT_HERSHEY_SIMPLEX, 2.0, [255, 255, 255], 2)
 
 def draw_tracks(frame, ids,  tracks, color_list):
-    max_len = 60
     for id, track in zip(ids,tracks):     
         for i,_ in  enumerate(track): 
-            if i < len(track)-1 and i >= len(track) - max_len:
+            if i < len(track)-1:
                 cv2.line(frame, (int(track[i][0]),
                     int(track[i][1])), 
                     (int(track[i+1][0]),
                     int(track[i+1][1])),
-                    color_list[id], thickness=3)
+                    color_list[id], 2)
 def main():
     logger.info("=======================================")
     logger.info("=========Multi-Camera Tracking=========")
@@ -83,11 +91,23 @@ def main():
     
     # sources = ["./data/cameras/s2-c0.avi", "./data/cameras/s2-c1.avi"]
     # sources = ["./data/videos/4p-c0.avi", "./data/videos/4p-c1.avi"]
-    sources = ["./data/videos/4p-c0.avi", "./data/videos/4p-c1.avi", "./data/videos/4p-c2.avi"]
+    # sources = ["./data/videos/4p-c0.avi", "./data/videos/4p-c1.avi", "./data/videos/4p-c2.avi"]
+    # sources = ["D:/projects/ReID_Survey/test_reid/t3/c1.avi",
+    #            "D:/projects/ReID_Survey/test_reid/t3/c2.avi",
+    #            "D:/projects/ReID_Survey/test_reid/t3/c3.avi",
+    #            "D:/projects/ReID_Survey/test_reid/t3/c4.avi",]
+    sources = ["D:/projects/ReID_Survey/test_reid/t1/c1.avi",
+               "D:/projects/ReID_Survey/test_reid/t1/c2.avi",]
 
+    OUTPUT_DIR = "./results/"
 
     # sources = ["./data/cameras/s2-c0.avi"]
-    
+    mct = MCT()
+
+    # start server
+    server = ServerTask()
+    ServerTask.start()
+
     for id, src in enumerate(sources):
         list_frame_manager[id] = FramedataManager()
         list_cameras[id] = SCTThread(id, src, list_frame_manager[id])
@@ -95,23 +115,30 @@ def main():
     for cam in list_cameras:
         list_cameras[cam].daemon = True
         list_cameras[cam].start()
+    
     grid_view_cols = 2
-    grid_view_rows = 2
+    grid_view_rows = 1
     output_view_height = 960
     output_view_width = 1280
     window_y = int(output_view_height/grid_view_rows)
     window_x = int(output_view_width/grid_view_cols)
     visual_frame = np.zeros((output_view_height, output_view_width, 3), dtype=np.uint8)
     
-    size = (output_view_width, output_view_height) 
    
     # Below VideoWriter object will create 
     # a frame of above defined The output  
     # is stored in 'filename.avi' file. 
-    result = cv2.VideoWriter(f'{OUTPUT_DIR}/mct_output.avi',  
-                            cv2.VideoWriter_fourcc(*'MJPG'), 
-                            10, size) 
-    mct = MCT()
+    # Get current time
+    now = datetime.datetime.now()
+    # Format the time as a string
+    formatted_time =  time.strftime("%Y%m%d-%H%M%S")
+    size = (output_view_width, output_view_height) 
+    output_video = f'{OUTPUT_DIR}/videos/mct_{formatted_time}.mp4'
+    logger.info(f"Output video at: {output_video}" )
+    writer = cv2.VideoWriter(output_video,  
+                            cv2.VideoWriter_fourcc(*'XVID'), 
+                            10, size) # *'XVID', 'mp4v'
+    
     rand_color_list = []
     for i in range(0,5005):
         r = randint(0, 255)
@@ -119,12 +146,14 @@ def main():
         b = randint(0, 255)
         rand_color = (r, g, b)
         rand_color_list.append(rand_color)
+    have_frame = False
     try:
         while not stopped:
             processing= True
             for camid in list_frame_manager:
                 framedata = list_frame_manager[camid].pop_framedata()
                 if framedata is not None:
+                    have_frame = True
                     # reid
                     ids, bboxes, tracks = mct.update(camid, framedata.identities, framedata.boxes, framedata.features)
                     # save output
@@ -143,12 +172,15 @@ def main():
                     x = int(camid  % grid_view_cols)
                     y = int(camid / grid_view_cols)
                     visual_frame[y * window_y : window_y + y * window_y, x * window_x: window_x + x * window_x] = vis_window
-            for i in range(2, grid_view_cols + 1):
-                cv2.line(visual_frame,(int(output_view_width/i),0),(int(output_view_width/i),output_view_height),(0,0,255),2)
-            for i in range(2, grid_view_rows + 1):
-                cv2.line(visual_frame,(0, int(output_view_height/i)),(output_view_width, int(output_view_height/i)),(0,0,255),2)
-            result.write(visual_frame)
-            cv2.imshow(f"Multi-Camera Tracking",visual_frame)
+            size_w = output_view_width / grid_view_cols
+            for i in range(1, grid_view_cols):
+                cv2.line(visual_frame,(int(i * size_w),0),(int(i * size_w),output_view_height),(0,0,255),2)
+            size_h = output_view_height / grid_view_rows
+            for i in range(1, grid_view_rows):
+                cv2.line(visual_frame,(0, int(size_h * i)),(output_view_width, int(size_h * i)),(0,0,255),2)
+            if have_frame:
+                writer.write(visual_frame)
+                cv2.imshow(f"Multi-Camera Tracking",visual_frame)
             if cv2.waitKey(25) == 'q':
                     break
             processing = False
@@ -158,7 +190,10 @@ def main():
         raise
     except (KeyboardInterrupt, SystemExit):
         logger.info(" Program is exiting by SIGINT signal...")
-    result.release() 
+    writer.release() 
+    logger.info(f"Saved output video at: {output_video}")
+
 if __name__ == "__main__":
     main()
     logger.info("Ended App!!!")
+

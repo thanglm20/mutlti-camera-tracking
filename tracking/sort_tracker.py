@@ -297,10 +297,10 @@ class SortTracker(object):
             id = int(identities[i]) if identities is not None else 0
             box_center = (int((box[0]+box[2])/2),(int((box[1]+box[3])/2)))
             label = str(id)
-            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
             cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 253), 2)
-            cv2.rectangle(img, (x1, y1 - 20), (x1 + w, y1), (255,144,30), -1)
-            cv2.putText(img, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.6, [255, 255, 255], 1)
+            cv2.rectangle(img, (x1, int((y1+y2)/2) - 20), (x1 + w, int((y1+y2)/2)), (255,144,30), -1)
+            cv2.putText(img, label, (x1, int((y1+y2)/2)),cv2.FONT_HERSHEY_SIMPLEX, 1.0, [255, 255, 255], 2)
             
     def draw_track_dets(self, frame, tracked_dets):
         if len(tracked_dets)>0:

@@ -2,13 +2,14 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 import lap #linear assignment problem solver
 from utils.config import Config
-
+from tracking.metrics import compute_euclidean_distance
 
 class MCT(object):
     def __init__(self) -> None:
         self.global_id = 0
         self.cfg = Config.get_instance()
         self.threshold = self.cfg.reid.getfloat("threshold", 0.5)
+        print("Threshold: ", self.threshold)
         self.max_features_len = self.cfg.reid.getint("max_features_len", 5)
 
         self.id_map = dict()
@@ -37,6 +38,8 @@ class MCT(object):
             self.id_map[gid]["tracks"][camid].append(((bbox[0]+bbox[2])/2,(bbox[1]+bbox[3])/2))
         else:
             self.id_map[gid]["tracks"][camid] = [((bbox[0]+bbox[2])/2,(bbox[1]+bbox[3])/2)]
+        if len(self.id_map[gid]["tracks"][camid]) > self.max_features_len:
+            self.id_map[gid]["tracks"][camid].pop(0)
 
     def cost_matrix(self, features, clusters):
         m = len(features)
@@ -51,7 +54,8 @@ class MCT(object):
                 # Assuming features[i] and clusters[j] are vectors (e.g., numpy arrays)
                 distances = []
                 for f in clusters[j][1]:
-                    distances.append(np.linalg.norm(f - features[i]))
+                    # distances.append(np.linalg.norm(f - features[i]))
+                    distances.append(compute_euclidean_distance(f, features[i]))
                 cost_matrix[i, j] = np.mean(distances)
         return cost_matrix   
         
@@ -117,8 +121,4 @@ class MCT(object):
                 ids.append(new_person["gid"])
                 out_bboxes.append(new_person["bbox"])
                 tracks.append(new_person["tracks"][camid])
-
-        
         return ids, out_bboxes, tracks
-        
-
