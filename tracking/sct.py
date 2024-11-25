@@ -96,12 +96,14 @@ class SCTThread(Thread):
                     boxes = tracked_dets[:,:4]
                     identities = tracked_dets[:, 8]
                     features = []
+                    cropped_people = []
                     for box in boxes:
                         x1, y1, x2, y2 = [int(x) if x >=0 else 0 for x in box]
                         person_image = frame_data.org_image[y1:y2, x1:x2]
                         feature = self.extractor.extract(person_image)
                         features.append(feature)
-                    
+                        cropped_people.append(person_image)
+                    frame_data.cropped_people = cropped_people
                     frame_data.boxes = boxes
                     frame_data.identities = identities
                     frame_data.features = features

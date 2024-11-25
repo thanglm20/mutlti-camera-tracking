@@ -25,7 +25,7 @@ class FrameData():
         Action recognition result:
             action_list, action_class_id_list, result
     """
-    def __init__(self, camid, frameid, image, poses=None, score=None):
+    def __init__(self, camid, frameid, image):
 
         self.camid = camid
         self.frameid = frameid
@@ -36,6 +36,7 @@ class FrameData():
         self.identities = []
         self.boxes = []
         self.features = []
+        self.cropped_people = []
       
     def copy(self):
         return self  

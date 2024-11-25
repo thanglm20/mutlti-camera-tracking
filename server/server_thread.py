@@ -47,10 +47,11 @@ class ServerTask(Thread):
         
         if self.stopped:
             return
+        logger.info("Server is waiting ...")
         # Start looping
         while not self.stop_event.is_set() and not self.stopped:
             # try:    
-                print("server is waiting ...")
+                
                 image = None
                 image = self.recv_image()
                 if image is not None:
@@ -62,14 +63,14 @@ class ServerTask(Thread):
                     # time.sleep(0.01)
                     # self.send_image(image)
                     feature = self.extractor.extract(image)
-                    json_data = self.mct.search(feature)
-                    if json_data is not None:
-                        json_string = json.dumps(json_data)
+                    results, cropped_images = self.mct.search(feature)
+                    if results is not None:
+                        json_string = json.dumps(results)
                         print("searching result: ", json_string)
-                        self.send_metadata(json_string, [image])
+                        self.send_metadata(json_string, cropped_images)
                     else:
                         json_string = "None"
-                        self.send_metadata(json_string, [image])
+                        self.send_metadata(json_string, [np.zeros((1, 1))])
             # except Exception as err:
             #     logger.error(f"Server has an error: {err}")  
             #     self.processing = False

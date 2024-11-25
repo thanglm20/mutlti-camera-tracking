@@ -96,8 +96,8 @@ def main():
     #            "D:/projects/ReID_Survey/test_reid/t3/c2.avi",
     #            "D:/projects/ReID_Survey/test_reid/t3/c3.avi",
     #            "D:/projects/ReID_Survey/test_reid/t3/c4.avi",]
-    sources = ["D:/projects/ReID_Survey/test_reid/t1/c1.avi",
-               "D:/projects/ReID_Survey/test_reid/t1/c2.avi",]
+    sources = ["D:/projects/ReID_Survey/test_reid/t4/c1.avi",
+               "D:/projects/ReID_Survey/test_reid/t4/c2.avi",]
 
     OUTPUT_DIR = "./results/"
 
@@ -156,16 +156,16 @@ def main():
                 if framedata is not None:
                     have_frame = True
                     # reid
-                    ids, bboxes, tracks = mct.update(camid, framedata.identities, framedata.boxes, framedata.features)
+                    gids = mct.update(camid, framedata)
+                    bboxes = mct.get_gid_clusters(gids, camid)
                     # save output
-                    for pid, box in zip(ids, bboxes):
-                        x1, y1, x2, y2 = [int(x) for x in box]
-                        person_image= framedata.org_image[y1:y2, x1:x2]
-                        if len(person_image):
-                            save_person_image(OUTPUT_DIR, camid, framedata.frameid, pid, person_image)
+                    # for pid, box in zip(ids, bboxes):
+                    #     x1, y1, x2, y2 = [int(x) for x in box]
+                    #     person_image= framedata.org_image[y1:y2, x1:x2]
+                    #     if len(person_image):
+                    #         save_person_image(OUTPUT_DIR, camid, framedata.frameid, pid, person_image)
                     # visualize
-                    draw_boxes(framedata.vis_image, ids, bboxes, rand_color_list)
-                    draw_tracks(framedata.vis_image, ids, tracks, rand_color_list)
+                    draw_boxes(framedata.vis_image, gids, bboxes, rand_color_list)
                     vis_window = cv2.resize(framedata.vis_image, (window_x, window_y))
                     # cv2.putText(vis_window,f'CAM {camid} frame {framedata.frameid}', (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2, cv2.LINE_AA)
                     cv2.putText(vis_window,f'CAM {camid}', (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2, cv2.LINE_AA)
