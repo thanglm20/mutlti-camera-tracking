@@ -11,7 +11,6 @@ import socket
 import zmq
 from tracking.feature_extractor import FeatureExtractor
 
-
 class ServerTask(Thread):
     def __init__(self, mct):
         self.mct = mct
@@ -23,6 +22,7 @@ class ServerTask(Thread):
         self.context = None
         self.server = None
         self.cfg = Config.get_instance()
+        self.results_map = {}
 
     def stop(self,  by_SIGINT=False):
         if self.server is not None:
@@ -55,19 +55,13 @@ class ServerTask(Thread):
                 image = None
                 image = self.recv_image()
                 if image is not None:
-                    # cv2.imshow("Received Image", image)
-                    # cv2.waitKey(1)
-                    # # while not self.stop_event.is_set():
-                    # time.sleep(0.05)
-                    # self.send_str(f'Received image with shape: {image.shape}')
-                    # time.sleep(0.01)
-                    # self.send_image(image)
-                    feature = self.extractor.extract(image)
-                    results, cropped_images = self.mct.search(feature)
+                    feature = self.extractor.extract(image)[0]
+                    results, images = self.mct.search(feature)
+                    
                     if results is not None:
                         json_string = json.dumps(results)
                         print("searching result: ", json_string)
-                        self.send_metadata(json_string, cropped_images)
+                        self.send_metadata(json_string, images)
                     else:
                         json_string = "None"
                         self.send_metadata(json_string, [np.zeros((1, 1))])

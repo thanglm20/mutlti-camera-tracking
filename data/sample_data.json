@@ -1,0 +1,37 @@
+{
+    "1": {
+        "cam0": {
+            "local_id": 1,
+            "bbox": [],
+            "features": [4,5,6],
+            "cropped_images": [[]],
+            "times": [[]]
+        },
+        "cam1": {
+            "local_id": 2,
+            "bbox": [],
+            "features": [1,2,3],
+            "cropped_images": [[[173, 165, 155],
+                            [180, 172, 162],
+                            [219, 202, 184],
+                            [255, 246, 228]]],
+            "times": [1732594418.5816545, 1732594418.5816545]
+        }
+    },
+    "2": {
+        "cam0": {
+            "local_id": 2,
+            "bbox": [],
+            "features": [[]],
+            "cropped_images": [[]],
+            "times": [[]]
+        },
+        "cam1": {
+            "local_id": 1,
+            "bbox": [],
+            "features": [[]],
+            "cropped_images": [[]],
+            "times": [[]]
+        }
+    }
+}

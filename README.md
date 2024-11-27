@@ -7,7 +7,8 @@ https://www.epfl.ch/labs/cvlab/data/data-pom-index-php/
 Yolov9 ONNX: https://github.com/thanglm20/yolov9-onnxruntime-gpu-cpp
 
 ### ReID
-Fast-Reid ONNX: https://github.com/JDAI-CV/fast-reid
+V1: Fast-Reid ONNX: https://github.com/JDAI-CV/fast-reid
+V2: TransReID-SSL
 
 ### Run
 ```

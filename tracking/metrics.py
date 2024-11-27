@@ -14,6 +14,10 @@ def cosine_distance(a, b):
     return 1 - (dot_product / (norm_a * norm_b))
 
 def compute_euclidean_distance(features, others):
+    if features.ndim == 1:
+        features = features.reshape(1, -1)
+    if others.ndim == 1:
+        others = others.reshape(1, -1)
     features = torch.from_numpy(features)
     others = torch.from_numpy(others)
     m, n = features.size(0), others.size(0)

@@ -7,6 +7,8 @@ from tracking.metrics import compute_euclidean_distance
 from tracking.frame_manager import FrameData
 import math
 from tracking.utils import save_person_image
+from db.elastic_search import DBManager
+
 class MCT(object):
     def __init__(self) -> None:
         self.global_id = 0
@@ -14,6 +16,8 @@ class MCT(object):
         self.threshold = self.cfg.reid.getfloat("threshold", 0.5)
         self.max_features_len = self.cfg.reid.getint("max_features_len", 5)
         self.gid_cluster = dict()
+        self.size_ranking = 3
+        self.db_search = DBManager(feature_dims=3)
         '''
         gid: 
             camid,
@@ -51,8 +55,6 @@ class MCT(object):
             self.gid_cluster[gid][camid]["features"].pop(0)
             self.gid_cluster[gid][camid]["cropped_images"].pop(0)
             self.gid_cluster[gid][camid]["times"].pop(0)
-
-
 
     def add_gid_re_enter_new_cam(self, gid, camid, id, bbox, cropped_image, feature, time):
         self.gid_cluster[gid][camid] = \
@@ -133,6 +135,7 @@ class MCT(object):
             # assign new global ids to this camera
             for id, bbox, cropped_person, feature in zip(identities, bboxes, cropped_people, features):
                 gid = self.make_new_global_id(camid, id, bbox, cropped_person, feature, frame_time)
+                self.db_search.update_gid_feature(gid, feature)
             # return new
             for gid, p in self.gid_cluster.items():
                 matched_gids.append(gid)
@@ -158,6 +161,7 @@ class MCT(object):
                     matched_old_gids.append(gid)
                     # update
                     self.update_gid_re_enter_old_cam(gid,camid,id,bbox,cropped_person,feature,frame_time)
+                    self.db_search.update_gid_feature(gid, feature)
                 # found, but ids swapped
                 elif gid != -1 and dist > self.threshold:
                     swapped_old_ids.append(id)
@@ -181,6 +185,7 @@ class MCT(object):
                     gid = swapped_gids[j]
                     threshold = dist_matrix[i][j]
                     self.update_gid_re_enter_old_cam(gid, camid, id, bbox, cropped, feature, frame_time)
+                    self.db_search.update_gid_feature(gid, feature)
                     matched_old_gids.append(gid)
             gids = matched_old_gids
             # step 3: match new ids with cluster, in others camera and gid
@@ -204,21 +209,30 @@ class MCT(object):
                             # re-enter in the same camera
                             if camid == matched_camid:
                                 self.update_gid_re_enter_old_cam(matched_gid, matched_camid, id, bbox, cropped, feature, frame_time)
+                                self.db_search.update_gid_feature(matched_gid, feature)
                             # re-enter in the different camera
                             else:
                                 self.add_gid_re_enter_new_cam(matched_gid, camid, id, bbox, cropped,feature, frame_time )
+                                self.db_search.update_gid_feature(matched_gid, feature)
                         # unmatch =>add new gid
                         else:
                             gid = self.make_new_global_id(camid, id, bbox,cropped_person, feature,frame_time)
+                            self.db_search.update_gid_feature(gid, feature)
                             gids.append(gid)
             else:
                 for id, bbox, feature in zip(unmatched_ids, unmatched_bboxes, unmatched_features):
                     gid = self.make_new_global_id(camid, id, bbox,cropped_person, feature,frame_time)
+                    self.db_search.update_gid_feature(gid, feature)
                     gids.append(gid)
             # self.save_images("./outputs")
         return gids
     
     def search(self, feature):
+        resp = self.db_search.search_feature(feature, self.size_ranking)
+
+        for i, res in enumerate(resp):
+            print(f'top {i+1}: ', ', id: ',res['_id'], ', score: ', res['_score'])
+
         if self.gid_cluster is None:
             return None, None
         distances = []
@@ -231,20 +245,24 @@ class MCT(object):
         if len(distances) == 0:
             return None, None
         sorted_distacne = sorted(distances, key=lambda x: x[1])
-        if(sorted_distacne[0][1] > self.threshold):
-            return None, None
-        result = {}
-        top1_gid = sorted_distacne[0][0]
-        result['gid'] = top1_gid
-        result['cameras'] = []
-        result['last_times'] = []
-        cropped_images = []
-        for camid, data in self.gid_cluster[top1_gid].items():
-            result['cameras'].append(camid)
-            result['last_times'].append(data['times'][-1])
-            cropped_images.append(data['cropped_images'][-1])
-            print(data['cropped_images'][-1].shape)
-        return json.dumps(result), cropped_images
+        # if(sorted_distacne[0][1] > self.threshold):
+        #     return None, None
+        
+        results = {}
+        results["top_gid"] = []
+        results["data"] = {}
+        images = []
+        for i in range(min(self.size_ranking, len(sorted_distacne))):
+            results["top_gid"].append(sorted_distacne[i][0])
+            results["data"][sorted_distacne[i][0]] = {}
+            results["data"][sorted_distacne[i][0]] ['cameras'] = []
+            results["data"][sorted_distacne[i][0]] ['last_times'] = []
+            for camid, data in self.gid_cluster[sorted_distacne[i][0]].items():
+                results["data"][sorted_distacne[i][0]]['cameras'].append(camid)
+                results["data"][sorted_distacne[i][0]]['last_times'].append(data['times'][-1])
+                # results["data"][sorted_distacne[i][0]]['images'].append(data['cropped_images'][-1])
+                images.append(data['cropped_images'][-1])   
+        return  results, images
     
     def get_gid_clusters(self, gids, camid):
         boxes = []
@@ -260,3 +278,8 @@ class MCT(object):
             for camid, data in list_cam.items():
                 for i, image in enumerate(data["cropped_images"]):
                     save_person_image(output_dir, camid, i, gid, image)
+
+    def save_cluster_to_json(self, output_file):
+        # Save the dictionary to a JSON file
+        with open(output_file, "w") as json_file:
+            json.dump(self.gid_cluster, json_file, indent=4) 

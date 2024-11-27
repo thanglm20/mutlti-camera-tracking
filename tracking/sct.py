@@ -100,7 +100,7 @@ class SCTThread(Thread):
                     for box in boxes:
                         x1, y1, x2, y2 = [int(x) if x >=0 else 0 for x in box]
                         person_image = frame_data.org_image[y1:y2, x1:x2]
-                        feature = self.extractor.extract(person_image)
+                        feature = self.extractor.extract(person_image)[0]
                         features.append(feature)
                         cropped_people.append(person_image)
                     frame_data.cropped_people = cropped_people
