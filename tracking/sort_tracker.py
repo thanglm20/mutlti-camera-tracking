@@ -299,8 +299,8 @@ class SortTracker(object):
             label = str(id)
             (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
             cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 253), 2)
-            cv2.rectangle(img, (x1, int((y1+y2)/2) - 20), (x1 + w, int((y1+y2)/2)), (255,144,30), -1)
-            cv2.putText(img, label, (x1, int((y1+y2)/2)),cv2.FONT_HERSHEY_SIMPLEX, 1.0, [255, 255, 255], 2)
+            cv2.rectangle(img, (int((x1+x2)/2), int((y1+y2)/2) - 20), (int((x1+x2)/2) + w, int((y1+y2)/2)), (255,144,30), -1)
+            cv2.putText(img, label, (int((x1+x2)/2), int((y1+y2)/2)),cv2.FONT_HERSHEY_SIMPLEX, 1.0, [255, 255, 255], 2)
             
     def draw_track_dets(self, frame, tracked_dets):
         if len(tracked_dets)>0:

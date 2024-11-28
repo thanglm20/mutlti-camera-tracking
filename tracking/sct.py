@@ -8,9 +8,12 @@ from tracking.frame_manager import FramedataManager, FrameData
 from tracking.detector import YOLOv9
 from utils.config import Config
 import sys
+import os
+import shutil
 from tracking.sort_tracker import SortTracker
 from tracking.feature_extractor import FeatureExtractor
-
+from db.elastic_search import DBManager
+from tracking.utils import save_person_image, read_image, get_current_utc_iso
 class SCTThread(Thread):
     def __init__(self, camid, source, framedata_manager:FramedataManager):
         """Create a Processor.
@@ -33,6 +36,9 @@ class SCTThread(Thread):
         self.yolo_labels = self.cfg.yolo.getstr("yolo_labels", "./models/coco.yaml")
         self.reid_gpu = self.cfg.reid.getboolean("gpu", True)
         self.reid_model = self.cfg.reid.getstr("reid_model", "./models/reid.onnx")
+        self.visualize= self.cfg.output.getboolean("visualize", True)
+
+        self.output_dir = self.cfg.output.getstr("output_dir", "./outputs")
 
         self.stop_event = Event()
         self.processing = False
@@ -68,6 +74,9 @@ class SCTThread(Thread):
         self.tracker = SortTracker(max_age=sort_max_age,min_hits=sort_min_hits,iou_threshold=sort_iou_thresh)
         device = 'cuda' if self.reid_gpu else 'cpu'
         self.extractor = FeatureExtractor(self.reid_model, device, 0)
+        self.cam_db_search = DBManager(camid=self.camid, feature_dims=384,create_index=True)
+
+        self.clear_old_output()
 
         if self.stopped:
             return
@@ -89,27 +98,37 @@ class SCTThread(Thread):
                                 np.array([x1, y1, x2, y2, conf, detclass])))
                 # self.detector.draw_detections(frame_data.vis_image, detections=detections)
                 tracked_dets = self.tracker.update(dets_to_sort)
-                # tracks = self.tracker.getTrackers()
-                # self.tracker.draw_tracks(frame_data.vis_image, tracks)
-                self.tracker.draw_track_dets(frame_data.vis_image, tracked_dets)
+                cropped_people = []
+                features = []
+                identities = []
+                boxes = []
                 if len(tracked_dets) > 0:
                     boxes = tracked_dets[:,:4]
                     identities = tracked_dets[:, 8]
-                    features = []
-                    cropped_people = []
-                    for box in boxes:
+                    for id, box in zip(identities, boxes):
+                        pid = int(id)
                         x1, y1, x2, y2 = [int(x) if x >=0 else 0 for x in box]
                         person_image = frame_data.org_image[y1:y2, x1:x2]
                         feature = self.extractor.extract(person_image)[0]
                         features.append(feature)
                         cropped_people.append(person_image)
+                        # save image and feature to db
+                        saved_image_path = save_person_image(self.output_dir, self.camid, frame_data.frameid, pid, person_image, rotate_size=5)
+                        leave_time = get_current_utc_iso()
+                        if self.cam_db_search.is_existed(id=pid):
+                            self.cam_db_search.update_old_id(pid, feature, leave_time, saved_image_path)
+                        else:
+                            self.cam_db_search.add_new_id(pid, feature,leave_time, leave_time, saved_image_path)
+                    
+                if self.visualize:
                     frame_data.cropped_people = cropped_people
                     frame_data.boxes = boxes
                     frame_data.identities = identities
                     frame_data.features = features
-                if self.framedata_manager is None:
-                    break
-                self.framedata_manager.attach_framedata(frame_data)
+                    self.tracker.draw_track_dets(frame_data.vis_image, tracked_dets)
+                    if self.framedata_manager is None:
+                        break
+                    self.framedata_manager.attach_framedata(frame_data)
                 # logger.info(f'Camera {self.camid} is processing frame {self.frameid}')
                 self.processing = False
 
@@ -124,4 +143,35 @@ class SCTThread(Thread):
         logger.info(f"Camera [{str(self.camid)}] is stopped")
 
 
-        
+    def clear_old_output(self):
+         # List all entries in the parent directory
+        for item in os.listdir(self.output_dir):
+            item_path = os.path.join(self.output_dir, item)
+            # Check if the entry is a directory
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)  # Delete the directory and its contents
+        logger.info("Cleared all previous output images!!!")
+    
+    def search_feature(self, feature,start_time=None, end_time=None, num_candidates=3):
+        resp = self.cam_db_search.search_feature(feature, num_candidates, start_time=start_time, end_time=end_time)
+        print("====> Result in camera: ", self.camid)
+        results = {}
+        results['gids'] = []
+        results['scores'] = []
+        results['tracking_times'] = []
+        images = []
+        for i, res in enumerate(resp):
+            # print(f'top {i+1}: ', ', id: ',res['_id'], ', score: ', res['_score'], ', ', 
+            #       res['fields']['saved_image_path'][0],res['fields']['enter_time'][0], res['fields']['leave_time'][0] )  
+            print(f'top {i+1}: ', ', id: ',res['_id'], ', score: ', res['_score'], ', ', 
+                   res['_source'])    
+            results['gids'].append(res['_id'])
+            results['scores'].append(res['_score'])
+            # results['tracking_times'].append({'enter_time': res['fields']['enter_time'][0],
+            #                                   'leave_time': res['fields']['leave_time'][0]})
+            save_image_path =  res['_source']['saved_image_path']
+            image = read_image(save_image_path)
+            if image is None:
+                return None, None
+            images.append(image)
+        return results, images

@@ -1,4 +1,5 @@
 
+import argparse
 import cv2
 import zmq
 import threading
@@ -99,12 +100,29 @@ class MctClient(object):
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
             images.append(image)
         return data, images
-def main():
+    
+    def send_metadata(self, str, images):
+        message_parts = []
+        message_parts.append(str.encode('utf-8'))
+        encoded_images = []
+        for image in images:
+            _, buffer = cv2.imencode('.jpg', image)
+            encoded_images.append(buffer.tobytes())
+        for image_bytes in encoded_images:
+            message_parts.append(image_bytes)
+        self.client.send_multipart(message_parts)
+
+def main(args):
     """main function"""
     client = MctClient()
     TEST_DIR = "./reid_data"
     
-    image_path = sys.argv[1]
+    image_path = args.query_image
+    start_time = args.start_time
+    end_time = args.end_time
+    num_candidates = args.num_candidates
+    request_data = {'start_time': start_time, 'end_time': end_time, 'num_candidates': num_candidates}
+    request_data = json.dumps(request_data)
     print(f"Query image: {image_path}")
     try:
         # list_people_images = []
@@ -115,38 +133,38 @@ def main():
         font_scale = 0.6
         thickness = 1
         request_image = cv2.imread(image_path)
-        client.send_image(request_image)
+        # client.send_image(request_image)
+        client.send_metadata(request_data, [request_image])
         # response = client.wait_respone_str()
-        results, images = client.recv_metadata()
+        results, result_images = client.recv_metadata()
+        print(results)
         item_size = (150, 200)
         if results:
-            print("Found a matching person with GID: ", results["top_gid"])
-            data = results["data"]
-            idx = 0
-            results_images= []
+            idx_image = 0
+            cam_result_images = []
             max_w = 0
-            for i, gid in enumerate(results["top_gid"]):
+            for camid, data in results.items():
                 print(":--------------------------")
-                print(gid)
-                output_result=[]
-                num_images = len(data[f'{gid}']["cameras"])
-                cameras = data[f'{gid}']["cameras"]
-                last_times = data[f'{gid}']["last_times"]
-                cropped_images = images[idx:idx+num_images]
-                for cam, img, last_time in zip(cameras, cropped_images, last_times):
-                    print(cam, img.shape, last_time)
-                    utc_time_str = datetime.fromtimestamp(last_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
+                gids = data['gids']
+                scores = data['scores']
+                num_images = len(gids)
+                output_result = []
+                cropped_images = result_images[idx_image: idx_image + num_images]
+                for gid, img, score in zip(gids, cropped_images, scores):
                     resized_img = cv2.resize(img, item_size)
+                    score = score * 100 
+                    score = round(score, 2) if score <= 1.0 else 1.0
                     # Add text to the image
-                    cv2.putText(resized_img, f'Camera: {cam}', (10,30), font, font_scale, (0, 255, 255), thickness, cv2.LINE_AA)
-                    cv2.putText(resized_img, f'{utc_time_str}', (10,55), font, font_scale/2, (0, 255, 0), thickness, cv2.LINE_AA)
+                    # cv2.putText(resized_img, f'Camera: {cam}', (10,30), font, font_scale, (0, 255, 255), thickness, cv2.LINE_AA)
+                    cv2.putText(resized_img, f'score: {score}', (10,30), font, font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
                     resized_img = padding_image(resized_img, (resized_img.shape[1] + 20,resized_img.shape[0]))
                     output_result.append(resized_img)
-                idx = idx + num_images
-                person_stack = np.hstack(output_result)
-                person_stack = add_left_lable(person_stack, f'Top{i + 1} ID: {gid}')
-                max_w = max(max_w, person_stack.shape[1])
-                results_images.append(person_stack)
+                idx_image = idx_image + num_images
+                if len(output_result):
+                    person_stack = np.hstack(output_result)
+                    person_stack = add_left_lable(person_stack, camid)
+                    max_w = max(max_w, person_stack.shape[1])
+                    cam_result_images.append(person_stack)
 
             output_size = (max_w, item_size[1])
             output = []
@@ -154,60 +172,16 @@ def main():
             request_image = add_left_lable(request_image, "Query image")
             request_image = padding_image(request_image, output_size)
             output.append(request_image)
-            for i, img in enumerate(results_images):
+            for i, img in enumerate(cam_result_images):
                 img = padding_image(img, output_size)
                 output.append(img)
             vertical_stack = np.vstack(output)
-            for i, img in enumerate(results_images):
+            for i, img in enumerate(cam_result_images):
                 cv2.line(vertical_stack,(0, int((i+1)*output_size[1])),(output_size[0],int((i+1)*output_size[1])),(0,255,0),1)
             cv2.imshow("Matching Results", vertical_stack)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-            # desired_size = (210, 420) 
-            # output = []
-            # for camid, t, image in zip(data['cameras'], data['last_times'], images):
-            #     utc_time_str = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
-            #     print("\tAppears Camera: ", camid, " at time: ", \
-            #         utc_time_str, " with image shape: ", image.shape)
-            #     # Set a fixed height for all images
-            #     resized_img = cv2.resize(image, desired_size)
-            #     # Add text to the image
-            #     cv2.putText(resized_img, f'Camera: {camid}', (10,30), font, font_scale, (0, 255, 255), thickness, cv2.LINE_AA)
-            #     cv2.putText(resized_img, f'Last time: {utc_time_str}', (10,55), font, font_scale/2, (0, 255, 0), thickness, cv2.LINE_AA)
-            #     output.append(resized_img)
 
-            # # Stack images horizontally
-            # horizontal_stack = np.hstack(output)
-            # height1, width1 = horizontal_stack.shape[:2]
-            # request_image = cv2.resize(request_image, desired_size)
-            # height2, width2 = request_image.shape[:2]
-            # if height1 != height2:
-            #     request_image = cv2.resize(request_image, (width2, height1))
-            #     height2, width2 = request_image.shape[:2]
-            # # Calculate padding for left and right
-            # total_padding = max(0, width1 - width2)
-            # left_padding = total_padding // 2
-            # right_padding = total_padding - left_padding
-
-            # # Apply padding to request_image
-            # padded_request_image = cv2.copyMakeBorder(
-            #     request_image,
-            #     top=0,
-            #     bottom=0,
-            #     left=left_padding,
-            #     right=right_padding,
-            #     borderType=cv2.BORDER_CONSTANT,
-            #     value=(0, 0, 0)  # Black padding, adjust as needed
-            # )
-            # cv2.putText(padded_request_image, f'Global ID: {data["gid"]}', 
-            #             (int(padded_request_image.shape[1]/2-100),padded_request_image.shape[0]-20), 
-            #             font, font_scale, (255, 0, 0), thickness, cv2.LINE_AA)
-            # cv2.putText(padded_request_image, f'Query image', (10,30), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
-            # # Vertically stack the images
-            # vertical_stack = np.vstack((padded_request_image, horizontal_stack))
-            # cv2.imshow("Matching Results", vertical_stack)
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
         else:
             print("Not found")
             
@@ -223,4 +197,17 @@ def main():
         client.close() 
     
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="ReID Baseline Training")
+    parser.add_argument(
+        "--query_image", default="", help="Query image path", type=str, required=True
+    )
+    parser.add_argument("--start_time", help="Start time searching",  type=str,default="")
+    parser.add_argument("--end_time", help="End time searching", type=str, default="")
+    parser.add_argument("--num_candidates", help="Top candidates", type=int, default=3)
+
+    args = parser.parse_args()
+    main(args)
+
+'''
+python .\client\client_searching.py --query_image=.\client\query_images\1.jpg --start_time=2024-11-28T06:22:59.232643+00:00 --end_time=2025-11-28T06:22:59.232643+00:00
+'''

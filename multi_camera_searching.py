@@ -14,6 +14,7 @@ from tracking.sct import SCTThread
 from tracking.frame_manager import FramedataManager
 from tracking.mct import MCT
 from server.server_thread import ServerTask
+from tracking.utils import get_current_utc_iso
 logger = Logger()
 cfg = Config()
 
@@ -85,8 +86,10 @@ def draw_tracks(frame, ids,  tracks, color_list):
                     int(track[i+1][1])),
                     color_list[id], 2)
 def main():
+    start_time = get_current_utc_iso()
     logger.info("=======================================")
-    logger.info("=========Multi-Camera Tracking=========")
+    logger.info("=========Multi-Camera Searching=========")
+    logger.info(f"========= {start_time} =========")
     logger.info("=======================================")
     
     # sources = ["./data/cameras/s2-c0.avi", "./data/cameras/s2-c1.avi"]
@@ -97,30 +100,27 @@ def main():
     #            "D:/projects/ReID_Survey/test_reid/t3/c3.avi",
     #            "D:/projects/ReID_Survey/test_reid/t3/c4.avi",]
     sources = ["D:/projects/ReID_Survey/test_reid/t4/c1.avi",
-               "D:/projects/ReID_Survey/test_reid/t4/c2.avi",
-               "D:/projects/ReID_Survey/test_reid/t4/c4.avi",
+               "D:/projects/ReID_Survey/test_reid/t4/c2.avi"
                ]
 
     OUTPUT_DIR = "./results/"
 
-    # sources = ["./data/cameras/s2-c0.avi"]
-    mct = MCT()
-
-    # start server
-    global server
-    server = ServerTask(mct=mct)
-    server.start()
-
     for id, src in enumerate(sources):
-        list_frame_manager[id] = FramedataManager()
-        list_cameras[id] = SCTThread(id, src, list_frame_manager[id])
+        camid = f'cam{id}'
+        list_frame_manager[camid] = FramedataManager()
+        list_cameras[camid] = SCTThread(camid, src, list_frame_manager[camid])
 
     for cam in list_cameras:
         list_cameras[cam].daemon = True
         list_cameras[cam].start()
     
+    # start server
+    global server
+    server = ServerTask(list_cameras)
+    server.start()
+
     grid_view_cols = 2
-    grid_view_rows = 2
+    grid_view_rows = 1
     output_view_height = 960
     output_view_width = 1280
     window_y = int(output_view_height/grid_view_rows)
@@ -154,14 +154,14 @@ def main():
         while not stopped:
             processing= True
             for camid in list_frame_manager:
+                cam_idx = int(camid[3:])
                 framedata = list_frame_manager[camid].pop_framedata()
                 if framedata is not None:
                     have_frame = True
                     vis_window = cv2.resize(framedata.vis_image, (window_x, window_y))
-                    # cv2.putText(vis_window,f'CAM {camid} frame {framedata.frameid}', (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2, cv2.LINE_AA)
-                    cv2.putText(vis_window,f'CAM {camid}', (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2, cv2.LINE_AA)
-                    x = int(camid  % grid_view_cols)
-                    y = int(camid / grid_view_cols)
+                    cv2.putText(vis_window,f'{camid}', (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2, cv2.LINE_AA)
+                    x = int(cam_idx  % grid_view_cols)
+                    y = int(cam_idx / grid_view_cols)
                     visual_frame[y * window_y : window_y + y * window_y, x * window_x: window_x + x * window_x] = vis_window
             size_w = output_view_width / grid_view_cols
             for i in range(1, grid_view_cols):
